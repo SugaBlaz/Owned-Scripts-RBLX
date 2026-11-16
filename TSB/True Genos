@@ -57,7 +57,7 @@ local trueGenosContents = trueGenosUI
 local button = trueGenosContents.Parent:WaitForChild("ClickRegion")
 local iconOverlay = trueGenosContents.Parent:WaitForChild("IconOverlay")
 
-local iconLabel = trueGenosContents:FindFirstChild("IconLabel")
+local iconLabel = trueGenosContents:FindFirstChild("IconLabelContainer"):FindFirstChild("IconLabel")
 local iconImage = trueGenosContents:FindFirstChild("IconImage")
 
 if iconLabel and iconLabel:IsA("TextLabel") then
@@ -1199,7 +1199,7 @@ connectController(button.Activated, function()
 
     StopCharacterScript()
 
-    local communicate = player:FindFirstChild("Communicate")
+    local communicate = previousCharacter:FindFirstChild("Communicate")
     if not communicate or not communicate:IsA("RemoteEvent") then
         warn("[SugaBlaz] Player.Communicate RemoteEvent was not found.")
         return
