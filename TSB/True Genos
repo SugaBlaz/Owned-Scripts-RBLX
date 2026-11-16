@@ -1,0 +1,1266 @@
+--// SUGABLAZ CHARACTER SCRIPT
+--// StartCharacterScript() enables the character features.
+--// StopCharacterScript() disconnects the active run and removes its instances.
+--// The custom character-menu button remains available while the features are stopped.
+
+--// SERVICES
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+local Workspace = game:GetService("Workspace")
+local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
+
+--// PLAYER REFERENCES
+local player = Players.LocalPlayer
+local playerGui = player:WaitForChild("PlayerGui")
+local backpack = player:WaitForChild("Backpack")
+
+--// CHARACTER MENU
+local dropdownScroller = playerGui
+    :WaitForChild("TopbarStandardClipped")
+    :WaitForChild("ClippedCointainer")
+    :WaitForChild("DropdownScroller")
+
+local cyborgTemplate = dropdownScroller:WaitForChild("Cyborg")
+
+-- Remove an older copy if this LocalScript is re-executed.
+local previousCustomButton = dropdownScroller:FindFirstChild("True Genos")
+if previousCustomButton then
+    previousCustomButton:Destroy()
+end
+
+local trueGenosUI = cyborgTemplate:Clone()
+trueGenosUI.Name = "True Genos"
+
+local trueGenosContents = trueGenosUI
+    :WaitForChild("IconButton")
+    :WaitForChild("Menu")
+    :WaitForChild("IconSpot")
+    :WaitForChild("Contents")
+
+local button = trueGenosContents.Parent:WaitForChild("ClickRegion")
+local iconOverlay = trueGenosContents.Parent:WaitForChild("IconOverlay")
+
+local iconLabel = trueGenosContents:FindFirstChild("IconLabel")
+local iconImage = trueGenosContents:FindFirstChild("IconImage")
+
+if iconLabel and iconLabel:IsA("TextLabel") then
+    iconLabel.Text = "True Genos"
+end
+
+if iconImage and iconImage:IsA("ImageLabel") then
+    iconImage.ImageColor3 = Color3.fromRGB(255, 255, 0)
+end
+
+if trueGenosUI:IsA("GuiObject") then
+    trueGenosUI.Visible = true
+    if cyborgTemplate:IsA("GuiObject") then
+        trueGenosUI.LayoutOrder = cyborgTemplate.LayoutOrder + 1
+    end
+end
+
+iconOverlay.Visible = false
+trueGenosUI.Parent = dropdownScroller
+
+--// RUN CONTROLLER
+local ScriptRunning = false
+local RunGeneration = 0
+local ActiveRun = nil
+local CharacterSelectionGeneration = 0
+local StopCharacterScript
+
+local function StartCharacterScript()
+    if ScriptRunning then
+        warn("[SugaBlaz] Character script is already running.")
+        return
+    end
+
+    RunGeneration += 1
+
+    local run = {
+        id = RunGeneration,
+        connections = {},
+        cleanupFunctions = {},
+        managedInstances = {},
+        stopping = false,
+    }
+
+    ActiveRun = run
+    ScriptRunning = true
+
+    local function isRunning()
+        return ScriptRunning
+            and ActiveRun == run
+            and RunGeneration == run.id
+            and not run.stopping
+    end
+
+    local function connect(signal, callback)
+        if not isRunning() then
+            return nil
+        end
+
+        local connection = signal:Connect(function(...)
+            if isRunning() then
+                callback(...)
+            end
+        end)
+
+        table.insert(run.connections, connection)
+        return connection
+    end
+
+    local function disconnectTracked(connection)
+        if not connection then
+            return
+        end
+
+        if connection.Connected then
+            connection:Disconnect()
+        end
+
+        for index = #run.connections, 1, -1 do
+            if run.connections[index] == connection then
+                table.remove(run.connections, index)
+                break
+            end
+        end
+    end
+
+    local function trackInstance(instance)
+        table.insert(run.managedInstances, instance)
+        return instance
+    end
+
+    local function onCleanup(callback)
+        table.insert(run.cleanupFunctions, callback)
+    end
+
+    --// CONFIGURATION
+    local CONFIG = {
+        TeleportAnimation = "rbxassetid://15957361339",
+
+        CounterDistance = 50,
+        CounterOffset = CFrame.new(0, 0, 1),
+
+        RelocationDistance = 10000,
+        RelocationHeight = 3,
+        RelocationCooldown = 0.15,
+
+        OverclockRunAnimation = "rbxassetid://18897115785",
+        OverclockStopAnimation = "rbxassetid://13876406148",
+        OverclockSound = "rbxassetid://1847683491",
+
+        OverclockInitialSpeed = 0.5,
+        OverclockSpeed = 250,
+        OverclockBoostSpeed = 350,
+        OverclockBoostDelay = 2.3,
+        OverclockFadeTime = 1,
+
+        CharacterWaitTimeout = 10,
+    }
+
+    --// CHARACTER STATE
+    local character
+    local humanoid
+    local animator
+    local hrp
+    local characterRevision = 0
+    local animationConnection
+
+    local function getRoot()
+        if not character or not character.Parent then
+            return nil
+        end
+
+        local root = character:FindFirstChild("HumanoidRootPart")
+        if root and root:IsA("BasePart") then
+            return root
+        end
+
+        return nil
+    end
+
+    local function updateCharacter(newCharacter)
+        if not isRunning() or not newCharacter then
+            return false
+        end
+
+        characterRevision += 1
+        local thisRevision = characterRevision
+
+        character = newCharacter
+        humanoid = nil
+        animator = nil
+        hrp = nil
+
+        local newHumanoid = newCharacter:WaitForChild("Humanoid", CONFIG.CharacterWaitTimeout)
+        if not isRunning() or characterRevision ~= thisRevision then
+            return false
+        end
+
+        if not newHumanoid or not newHumanoid:IsA("Humanoid") then
+            warn("[SugaBlaz] Character Humanoid was not found.")
+            return false
+        end
+
+        local newAnimator = newHumanoid:FindFirstChildOfClass("Animator")
+        if not newAnimator then
+            newAnimator = newHumanoid:WaitForChild("Animator", 3)
+        end
+
+        if not isRunning() or characterRevision ~= thisRevision then
+            return false
+        end
+
+        if not newAnimator then
+            newAnimator = Instance.new("Animator")
+            newAnimator.Parent = newHumanoid
+        end
+
+        local newRoot = newCharacter:WaitForChild("HumanoidRootPart", CONFIG.CharacterWaitTimeout)
+        if not isRunning() or characterRevision ~= thisRevision then
+            return false
+        end
+
+        if not newRoot or not newRoot:IsA("BasePart") then
+            warn("[SugaBlaz] Character HumanoidRootPart was not found.")
+            return false
+        end
+
+        humanoid = newHumanoid
+        animator = newAnimator
+        hrp = newRoot
+        return true
+    end
+
+    --// ANIMATION TRACK MANAGEMENT
+    local animationTracks = {}
+
+    local function destroyTrack(track)
+        if not track then
+            return
+        end
+
+        animationTracks[track] = nil
+
+        pcall(function()
+            track:Stop(0)
+            track:Destroy()
+        end)
+    end
+
+    local function destroyAllTracks()
+        for track in pairs(animationTracks) do
+            destroyTrack(track)
+        end
+    end
+
+    local function loadTrack(animationId)
+        if not isRunning() or not animator then
+            return nil
+        end
+
+        local animation = Instance.new("Animation")
+        animation.AnimationId = animationId
+
+        local success, trackOrError = pcall(function()
+            return animator:LoadAnimation(animation)
+        end)
+
+        animation:Destroy()
+
+        if not success then
+            warn("[SugaBlaz] Could not load animation:", animationId, trackOrError)
+            return nil
+        end
+
+        local track = trackOrError
+        animationTracks[track] = true
+
+        -- Remove completed tracks from the registry so repeated moves do not
+        -- leave an ever-growing list of stopped AnimationTracks.
+        track.Stopped:Once(function()
+            animationTracks[track] = nil
+            pcall(function()
+                track:Destroy()
+            end)
+        end)
+
+        return track
+    end
+
+    local function stopAllAnimations(exceptTrack, targetHumanoid)
+        local target = targetHumanoid or humanoid
+        if not target then
+            return
+        end
+
+        for _, track in ipairs(target:GetPlayingAnimationTracks()) do
+            if track ~= exceptTrack then
+                pcall(function()
+                    track:Stop(0)
+                end)
+            end
+        end
+    end
+
+    --// UI VALUE RESTORATION
+    local savedUIValues = setmetatable({}, { __mode = "k" })
+
+    local function setUIProperty(instance, property, value)
+        if not instance then
+            return
+        end
+
+        local saved = savedUIValues[instance]
+        if not saved then
+            saved = {}
+            savedUIValues[instance] = saved
+        end
+
+        if saved[property] == nil then
+            local success, originalValue = pcall(function()
+                return instance[property]
+            end)
+
+            if success then
+                saved[property] = originalValue
+            end
+        end
+
+        pcall(function()
+            instance[property] = value
+        end)
+    end
+
+    local function restoreUI()
+        for instance, properties in pairs(savedUIValues) do
+            if instance and instance.Parent then
+                for property, originalValue in pairs(properties) do
+                    pcall(function()
+                        instance[property] = originalValue
+                    end)
+                end
+            end
+        end
+
+        table.clear(savedUIValues)
+    end
+
+    --// HOTBAR / ULTIMATE UI
+    local HOTBAR_NAMES = {
+        [1] = "Rapid Blows",
+        [2] = "Ignition Blast",
+        [3] = "Blaze Bomb",
+        [4] = "Jet Bomb",
+    }
+
+    local function getHotbarFrame()
+        local hotbarGui = playerGui:FindFirstChild("Hotbar")
+        local backpackFrame = hotbarGui and hotbarGui:FindFirstChild("Backpack")
+        return backpackFrame and backpackFrame:FindFirstChild("Hotbar")
+    end
+
+    local function updateHotbar()
+        if not isRunning() then
+            return
+        end
+
+        local hotbarFrame = getHotbarFrame()
+        if not hotbarFrame then
+            return
+        end
+
+        for slotIndex, name in pairs(HOTBAR_NAMES) do
+            local slot = hotbarFrame:FindFirstChild(tostring(slotIndex))
+            local base = slot and slot:FindFirstChild("Base")
+            local toolName = base and base:FindFirstChild("ToolName")
+
+            if toolName and toolName:IsA("TextLabel") then
+                setUIProperty(toolName, "Text", name)
+            end
+        end
+    end
+
+    local function updateUltimate()
+        if not isRunning() then
+            return
+        end
+
+        local bar = playerGui:FindFirstChild("Bar")
+        local magicHealth = bar and bar:FindFirstChild("MagicHealth")
+        if not magicHealth then
+            return
+        end
+
+        local textLabel = magicHealth:FindFirstChild("TextLabel")
+        local health = magicHealth:FindFirstChild("Health")
+        local healthBar = health and health:FindFirstChild("Bar")
+        local innerBar = healthBar and healthBar:FindFirstChild("Bar")
+
+        if textLabel and textLabel:IsA("TextLabel") then
+            setUIProperty(textLabel, "Text", "NO LIMITS")
+        end
+
+        if innerBar and innerBar:IsA("GuiObject") then
+            setUIProperty(innerBar, "BackgroundColor3", Color3.fromRGB(255, 255, 0))
+        end
+    end
+
+    --// HOTBAR MOVE FUNCTIONS
+    local function RapidBlows()
+        if not isRunning() or not character or not humanoid or not hrp or humanoid.Health <= 0 then
+            return
+        end
+
+        stopAllAnimations()
+
+        local track = loadTrack("rbxassetid://18181589384")
+        if track then
+            track:Play()
+            track:AdjustSpeed(0)
+            track.TimePosition = 0.2
+            track:AdjustSpeed(0.9)
+        end
+    end
+
+    local function IgnitionBlast()
+        if not isRunning() or not character or not humanoid or not hrp then
+            return
+        end
+        -- Add the Ignition Blast behavior here.
+    end
+
+    local function BlazeBomb()
+        if not isRunning() or not character or not humanoid or not hrp then
+            return
+        end
+        -- Add the Blaze Bomb behavior here.
+    end
+
+    local function JetBomb()
+        if not isRunning() or not character or not humanoid or not hrp then
+            return
+        end
+        -- Add the Jet Bomb behavior here.
+    end
+
+    local HOTBAR_FUNCTIONS = {
+        [1] = RapidBlows,
+        [2] = IgnitionBlast,
+        [3] = BlazeBomb,
+        [4] = JetBomb,
+    }
+
+    local boundMoveButtons = setmetatable({}, { __mode = "k" })
+
+    local function connectMoveButtons()
+        if not isRunning() then
+            return
+        end
+
+        local hotbarFrame = getHotbarFrame()
+        if not hotbarFrame then
+            return
+        end
+
+        for slotIndex, moveFunction in pairs(HOTBAR_FUNCTIONS) do
+            local slot = hotbarFrame:FindFirstChild(tostring(slotIndex))
+            local base = slot and slot:FindFirstChild("Base")
+            local moveButton = base and base:FindFirstChildWhichIsA("GuiButton", true)
+
+            if moveButton and not boundMoveButtons[moveButton] then
+                boundMoveButtons[moveButton] = true
+                connect(moveButton.Activated, moveFunction)
+            end
+        end
+    end
+
+    local uiRefreshQueued = false
+
+    local function scheduleUIRefresh()
+        if uiRefreshQueued or not isRunning() then
+            return
+        end
+
+        uiRefreshQueued = true
+        task.defer(function()
+            uiRefreshQueued = false
+            if not isRunning() then
+                return
+            end
+
+            updateUltimate()
+            updateHotbar()
+            connectMoveButtons()
+        end)
+    end
+
+    connect(playerGui.DescendantAdded, scheduleUIRefresh)
+
+    --// CREATE TOOLS
+    local function createTool(name)
+        local tool = Instance.new("Tool")
+        tool.Name = name
+        tool.RequiresHandle = false
+        tool.CanBeDropped = false
+        tool.Parent = backpack
+        trackInstance(tool)
+        return tool
+    end
+
+    --// TELEPORT ANIMATION
+    local function playTeleportAnimation()
+        if not isRunning() or not humanoid or humanoid.Health <= 0 then
+            return nil
+        end
+
+        local track = loadTrack(CONFIG.TeleportAnimation)
+        if track then
+            track:Play()
+        end
+
+        return track
+    end
+
+    --// QUANTUM COUNTER
+    local function findClosestPlayer()
+        local root = getRoot()
+        if not root then
+            return nil
+        end
+
+        local closestPlayer
+        local shortestDistanceSquared = CONFIG.CounterDistance * CONFIG.CounterDistance
+        local rootPosition = root.Position
+
+        for _, otherPlayer in ipairs(Players:GetPlayers()) do
+            if not isRunning() then
+                return nil
+            end
+
+            if otherPlayer ~= player then
+                local targetCharacter = otherPlayer.Character
+                local targetRoot = targetCharacter and targetCharacter:FindFirstChild("HumanoidRootPart")
+                local targetHumanoid = targetCharacter and targetCharacter:FindFirstChildOfClass("Humanoid")
+
+                if targetRoot and targetHumanoid and targetHumanoid.Health > 0 then
+                    local offset = rootPosition - targetRoot.Position
+                    local distanceSquared = offset:Dot(offset)
+
+                    if distanceSquared < shortestDistanceSquared then
+                        shortestDistanceSquared = distanceSquared
+                        closestPlayer = otherPlayer
+                    end
+                end
+            end
+        end
+
+        return closestPlayer
+    end
+
+    local function teleportToClosestPlayer()
+        local root = getRoot()
+        if not isRunning() or not root or not humanoid or humanoid.Health <= 0 then
+            return
+        end
+
+        local targetPlayer = findClosestPlayer()
+        if not targetPlayer or not isRunning() then
+            warn("[Quantum Counter] No living player within range.")
+            return
+        end
+
+        local targetCharacter = targetPlayer.Character
+        local targetRoot = targetCharacter and targetCharacter:FindFirstChild("HumanoidRootPart")
+        local targetHumanoid = targetCharacter and targetCharacter:FindFirstChildOfClass("Humanoid")
+
+        if not targetRoot or not targetHumanoid or targetHumanoid.Health <= 0 then
+            return
+        end
+
+        playTeleportAnimation()
+        if not isRunning() or not root.Parent or not targetRoot.Parent then
+            return
+        end
+
+        root.CFrame = targetRoot.CFrame * CONFIG.CounterOffset
+    end
+
+    local counterTool = createTool("Quantum Counter")
+    connect(counterTool.Activated, teleportToClosestPlayer)
+
+    --// QUANTUM RELOCATION
+    local relocationTool = createTool("Quantum Relocation")
+    local relocationEquipped = false
+    local lastRelocationInput = 0
+
+    local raycastParams = RaycastParams.new()
+    raycastParams.FilterType = Enum.RaycastFilterType.Exclude
+    raycastParams.IgnoreWater = false
+
+    local function teleportToPosition(screenPosition)
+        local root = getRoot()
+        if not isRunning() or not root or not humanoid or humanoid.Health <= 0 then
+            return
+        end
+
+        local camera = Workspace.CurrentCamera
+        if not camera then
+            return
+        end
+
+        raycastParams.FilterDescendantsInstances = character and { character } or {}
+
+        local ray = camera:ScreenPointToRay(screenPosition.X, screenPosition.Y)
+        local result = Workspace:Raycast(
+            ray.Origin,
+            ray.Direction * CONFIG.RelocationDistance,
+            raycastParams
+        )
+
+        if not result or not isRunning() then
+            return
+        end
+
+        local destination = result.Position + Vector3.new(0, CONFIG.RelocationHeight, 0)
+        local lookVector = root.CFrame.LookVector
+
+        playTeleportAnimation()
+        if not isRunning() or not root.Parent then
+            return
+        end
+
+        root.CFrame = CFrame.lookAt(destination, destination + lookVector)
+    end
+
+    connect(relocationTool.Equipped, function()
+        relocationEquipped = true
+    end)
+
+    connect(relocationTool.Unequipped, function()
+        relocationEquipped = false
+    end)
+
+    connect(UserInputService.InputBegan, function(input, gameProcessed)
+        if not relocationEquipped or gameProcessed then
+            return
+        end
+
+        local inputType = input.UserInputType
+        if inputType ~= Enum.UserInputType.MouseButton1
+            and inputType ~= Enum.UserInputType.Touch then
+            return
+        end
+
+        local now = os.clock()
+        if now - lastRelocationInput < CONFIG.RelocationCooldown then
+            return
+        end
+
+        lastRelocationInput = now
+        teleportToPosition(input.Position)
+    end)
+
+    --// OVERCLOCK
+    local overclockTool = createTool("Overclock")
+    local overclockActive = false
+    local overclockTrack
+    local overclockStopTrack
+    local movementConnection
+    local soundTween
+    local elapsedTime = 0
+    local moveSpeed = CONFIG.OverclockSpeed
+    local trail
+    local trailAttachments = {}
+    local overclockOriginalAnchored = nil
+
+    local overclockSound = trackInstance(Instance.new("Sound"))
+    overclockSound.Name = "SugaBlazOverclockSound"
+    overclockSound.SoundId = CONFIG.OverclockSound
+    overclockSound.Looped = true
+    overclockSound.Volume = 1
+    overclockSound.Parent = playerGui
+
+    local function destroyTrail()
+        if trail then
+            trail:Destroy()
+            trail = nil
+        end
+
+        for _, attachment in ipairs(trailAttachments) do
+            if attachment and attachment.Parent then
+                attachment:Destroy()
+            end
+        end
+
+        table.clear(trailAttachments)
+    end
+
+    local function createTrail(root)
+        destroyTrail()
+
+        if not root or not root.Parent then
+            return
+        end
+
+        local attachment0 = Instance.new("Attachment")
+        attachment0.Name = "SugaBlazTrailStart"
+        attachment0.Parent = root
+
+        local attachment1 = Instance.new("Attachment")
+        attachment1.Name = "SugaBlazTrailEnd"
+        attachment1.Position = Vector3.new(0, -2, 0)
+        attachment1.Parent = root
+
+        trailAttachments = { attachment0, attachment1 }
+
+        trail = Instance.new("Trail")
+        trail.Name = "SugaBlazOverclockTrail"
+        trail.Attachment0 = attachment0
+        trail.Attachment1 = attachment1
+        trail.Lifetime = 0.5
+        trail.Color = ColorSequence.new(Color3.new(1, 1, 1))
+        trail.Transparency = NumberSequence.new({
+            NumberSequenceKeypoint.new(0, 0),
+            NumberSequenceKeypoint.new(1, 1),
+        })
+        trail.Enabled = false
+        trail.Parent = root
+    end
+
+    local function stopMoving(root)
+        if movementConnection then
+            disconnectTracked(movementConnection)
+            movementConnection = nil
+        end
+
+        if root and root.Parent then
+            root.AssemblyLinearVelocity = Vector3.zero
+        end
+
+        if trail then
+            trail.Enabled = false
+        end
+
+        elapsedTime = 0
+        moveSpeed = CONFIG.OverclockSpeed
+    end
+
+    local function startMoving(root)
+        stopMoving(nil)
+        elapsedTime = 0
+        moveSpeed = CONFIG.OverclockSpeed
+
+        if trail then
+            trail.Enabled = true
+        end
+
+        movementConnection = connect(RunService.Heartbeat, function(deltaTime)
+            if not overclockActive then
+                return
+            end
+
+            if not root or not root.Parent then
+                overclockActive = false
+                stopMoving(nil)
+                return
+            end
+
+            elapsedTime += deltaTime
+            if elapsedTime >= CONFIG.OverclockBoostDelay then
+                moveSpeed = CONFIG.OverclockBoostSpeed
+            end
+
+            root.AssemblyLinearVelocity =
+                root.CFrame.LookVector * moveSpeed * CONFIG.OverclockInitialSpeed
+        end)
+    end
+
+    local function cancelSoundTween()
+        if soundTween then
+            pcall(function()
+                soundTween:Cancel()
+            end)
+            soundTween = nil
+        end
+    end
+
+    local function fadeOutSound()
+        cancelSoundTween()
+
+        if not overclockSound or not overclockSound.Parent then
+            return
+        end
+
+        soundTween = TweenService:Create(
+            overclockSound,
+            TweenInfo.new(CONFIG.OverclockFadeTime),
+            { Volume = 0 }
+        )
+
+        local currentTween = soundTween
+        currentTween:Play()
+
+        currentTween.Completed:Once(function()
+            if not isRunning() or overclockActive then
+                return
+            end
+
+            overclockSound:Stop()
+            overclockSound.Volume = 1
+
+            if soundTween == currentTween then
+                soundTween = nil
+            end
+        end)
+    end
+
+    local function deactivateOverclock(playStopAnimation, immediateSound)
+        overclockActive = false
+
+        local root = getRoot()
+        stopMoving(root)
+
+        if root and root.Parent and overclockOriginalAnchored ~= nil then
+            root.Anchored = overclockOriginalAnchored
+        end
+        overclockOriginalAnchored = nil
+
+        if overclockTrack then
+            destroyTrack(overclockTrack)
+            overclockTrack = nil
+        end
+
+        if immediateSound or not isRunning() then
+            cancelSoundTween()
+            overclockSound:Stop()
+            overclockSound.Volume = 1
+        else
+            fadeOutSound()
+        end
+
+        if playStopAnimation and isRunning() and humanoid and humanoid.Health > 0 then
+            overclockStopTrack = loadTrack(CONFIG.OverclockStopAnimation)
+            if overclockStopTrack then
+                overclockStopTrack:Play()
+            end
+        end
+    end
+
+    local function activateOverclock()
+        local root = getRoot()
+        if not isRunning() or not root or not humanoid or humanoid.Health <= 0 then
+            overclockActive = false
+            return
+        end
+
+        overclockActive = true
+        overclockOriginalAnchored = root.Anchored
+        if root.Anchored then
+            root.Anchored = false
+        end
+
+        createTrail(root)
+
+        if overclockTrack then
+            destroyTrack(overclockTrack)
+        end
+
+        overclockTrack = loadTrack(CONFIG.OverclockRunAnimation)
+        if overclockTrack then
+            overclockTrack:Play()
+        end
+
+        cancelSoundTween()
+        overclockSound.Volume = 1
+        overclockSound:Play()
+        startMoving(root)
+    end
+
+    local function toggleOverclock()
+        if not isRunning() then
+            return
+        end
+
+        if overclockActive then
+            deactivateOverclock(true, false)
+        else
+            activateOverclock()
+        end
+    end
+
+    connect(overclockTool.Activated, toggleOverclock)
+
+    --// ANIMATION OVERRIDES
+    local ANIMATION_OVERRIDES = {
+        ["rbxassetid://10479335397"] = {
+            Id = "rbxassetid://17838006839",
+            Time = 0.120,
+            Speed = 0.7,
+            Duration = 1.2,
+        },
+
+        ["rbxassetid://10503381238"] = {
+            Id = "rbxassetid://14001963401",
+            Time = 0.2,
+            Speed = 1,
+        },
+
+        ["rbxassetid://10470104242"] = {
+            Id = "rbxassetid://17858878027",
+            Time = 0.112,
+            Speed = 1,
+            Delay = 0.2,
+        },
+    }
+
+    local function onAnimationPlayed(originalTrack, eventCharacter, eventAnimator, eventHumanoid)
+        if not isRunning() or not originalTrack or not originalTrack.Animation then
+            return
+        end
+
+        local settings = ANIMATION_OVERRIDES[originalTrack.Animation.AnimationId]
+        if not settings then
+            return
+        end
+
+        -- Stop the original animation immediately, but only on the character
+        -- that raised this event.
+        stopAllAnimations(nil, eventHumanoid)
+
+        task.spawn(function()
+            if settings.Delay then
+                task.wait(settings.Delay)
+            end
+
+            if not isRunning()
+                or character ~= eventCharacter
+                or animator ~= eventAnimator
+                or not humanoid
+                or humanoid.Health <= 0 then
+                return
+            end
+
+            local replacementTrack = loadTrack(settings.Id)
+            if not replacementTrack or not isRunning() then
+                if replacementTrack then
+                    destroyTrack(replacementTrack)
+                end
+                return
+            end
+
+            replacementTrack:Play()
+            replacementTrack:AdjustSpeed(0)
+            replacementTrack.TimePosition = settings.Time
+            replacementTrack:AdjustSpeed(settings.Speed)
+
+            if settings.Duration then
+                task.delay(settings.Duration, function()
+                    if isRunning() then
+                        destroyTrack(replacementTrack)
+                    end
+                end)
+            end
+        end)
+    end
+
+    local function connectAnimationOverrides()
+        if not isRunning() or not humanoid then
+            return
+        end
+
+        disconnectTracked(animationConnection)
+        animationConnection = connect(humanoid.AnimationPlayed, function(originalTrack)
+            onAnimationPlayed(originalTrack, character, animator, humanoid)
+        end)
+    end
+
+    --// RESPAWN CLEANUP
+    local function resetForRespawn()
+        overclockActive = false
+        relocationEquipped = false
+
+        local oldRoot = getRoot()
+        stopMoving(oldRoot)
+        if oldRoot and oldRoot.Parent and overclockOriginalAnchored ~= nil then
+            oldRoot.Anchored = overclockOriginalAnchored
+        end
+        overclockOriginalAnchored = nil
+
+        cancelSoundTween()
+        overclockSound:Stop()
+        overclockSound.Volume = 1
+
+        if overclockTrack then
+            destroyTrack(overclockTrack)
+            overclockTrack = nil
+        end
+
+        if overclockStopTrack then
+            destroyTrack(overclockStopTrack)
+            overclockStopTrack = nil
+        end
+
+        destroyTrail()
+        destroyAllTracks()
+        disconnectTracked(animationConnection)
+        animationConnection = nil
+    end
+
+    --// INITIALIZE
+    -- Connect CharacterAdded before waiting for the first character, so a
+    -- respawn during startup cannot be missed.
+    connect(player.CharacterAdded, function(newCharacter)
+        resetForRespawn()
+
+        task.spawn(function()
+            if not updateCharacter(newCharacter) or not isRunning() then
+                return
+            end
+
+            connectAnimationOverrides()
+            scheduleUIRefresh()
+        end)
+    end)
+
+    local initialCharacter = player.Character or player.CharacterAdded:Wait()
+    if not isRunning() then
+        return
+    end
+
+    if not updateCharacter(initialCharacter) then
+        if isRunning() then
+            warn("[SugaBlaz] Could not initialize the character.")
+            StopCharacterScript()
+        end
+        return
+    end
+
+    connectAnimationOverrides()
+    updateUltimate()
+    updateHotbar()
+    connectMoveButtons()
+
+    --// RUN CLEANUP
+    onCleanup(function()
+        overclockActive = false
+        relocationEquipped = false
+
+        local currentRoot = getRoot()
+        stopMoving(currentRoot)
+        if currentRoot and currentRoot.Parent and overclockOriginalAnchored ~= nil then
+            currentRoot.Anchored = overclockOriginalAnchored
+        end
+        overclockOriginalAnchored = nil
+
+        cancelSoundTween()
+        overclockSound:Stop()
+        overclockSound.Volume = 1
+
+        destroyTrail()
+        destroyAllTracks()
+        restoreUI()
+    end)
+
+    print("[SugaBlaz] Character script started.")
+end
+
+StopCharacterScript = function()
+    local run = ActiveRun
+    if not run or run.stopping then
+        return
+    end
+
+    -- Invalidate callbacks before disconnecting anything. This also safely
+    -- cancels startup if it is currently yielding in WaitForChild/CharacterAdded.
+    run.stopping = true
+    ScriptRunning = false
+    RunGeneration += 1
+    ActiveRun = nil
+
+    for index = #run.connections, 1, -1 do
+        local connection = run.connections[index]
+        if connection and connection.Connected then
+            connection:Disconnect()
+        end
+    end
+    table.clear(run.connections)
+
+    for index = #run.cleanupFunctions, 1, -1 do
+        pcall(run.cleanupFunctions[index])
+    end
+    table.clear(run.cleanupFunctions)
+
+    for _, instance in ipairs(run.managedInstances) do
+        if instance then
+            pcall(function()
+                instance:Destroy()
+            end)
+        end
+    end
+    table.clear(run.managedInstances)
+
+    print("[SugaBlaz] Character script stopped.")
+end
+
+--// CUSTOM BUTTON HOVER / TOUCH DETECTION
+-- MouseEnter/MouseLeave handles desktop pointer hover. Touch positions are
+-- tracked globally so a finger can move onto or away from the button.
+local controllerConnections = {}
+
+local function connectController(signal, callback)
+    local connection = signal:Connect(callback)
+    table.insert(controllerConnections, connection)
+    return connection
+end
+
+local mouseOverButton = false
+local activeTouchPositions = {}
+
+local function isPointInside(guiObject, position)
+    local absolutePosition = guiObject.AbsolutePosition
+    local absoluteSize = guiObject.AbsoluteSize
+
+    return position.X >= absolutePosition.X
+        and position.X <= absolutePosition.X + absoluteSize.X
+        and position.Y >= absolutePosition.Y
+        and position.Y <= absolutePosition.Y + absoluteSize.Y
+end
+
+local function updateIconOverlay()
+    local shouldShow = mouseOverButton
+
+    if not shouldShow then
+        for _, position in pairs(activeTouchPositions) do
+            if isPointInside(button, position) then
+                shouldShow = true
+                break
+            end
+        end
+    end
+
+    iconOverlay.Visible = shouldShow
+end
+
+connectController(button.MouseEnter, function()
+    mouseOverButton = true
+    updateIconOverlay()
+end)
+
+connectController(button.MouseLeave, function()
+    mouseOverButton = false
+    updateIconOverlay()
+end)
+
+connectController(UserInputService.InputBegan, function(input)
+    if input.UserInputType == Enum.UserInputType.Touch then
+        activeTouchPositions[input] = Vector2.new(input.Position.X, input.Position.Y)
+        updateIconOverlay()
+    end
+end)
+
+connectController(UserInputService.InputChanged, function(input)
+    if input.UserInputType == Enum.UserInputType.Touch and activeTouchPositions[input] then
+        activeTouchPositions[input] = Vector2.new(input.Position.X, input.Position.Y)
+        updateIconOverlay()
+    end
+end)
+
+connectController(UserInputService.InputEnded, function(input)
+    if activeTouchPositions[input] then
+        activeTouchPositions[input] = nil
+        updateIconOverlay()
+    end
+end)
+
+--// CHARACTER BUTTON INTEGRATION
+connectController(button.Activated, function()
+    CharacterSelectionGeneration += 1
+    local selectionId = CharacterSelectionGeneration
+    local previousCharacter = player.Character
+
+    StopCharacterScript()
+
+    local communicate = player:FindFirstChild("Communicate")
+    if not communicate or not communicate:IsA("RemoteEvent") then
+        warn("[SugaBlaz] Player.Communicate RemoteEvent was not found.")
+        return
+    end
+
+    local success, errorMessage = pcall(function()
+        communicate:FireServer({
+            Goal = "Change Character",
+            Character = "Cyborg",
+        })
+    end)
+
+    if not success then
+        warn("[SugaBlaz] Character change request failed:", errorMessage)
+        return
+    end
+
+    task.spawn(function()
+        local deadline = os.clock() + 2.5
+
+        while os.clock() < deadline do
+            if selectionId ~= CharacterSelectionGeneration then
+                return
+            end
+
+            if player.Character and player.Character ~= previousCharacter then
+                break
+            end
+
+            task.wait(0.05)
+        end
+
+        if selectionId == CharacterSelectionGeneration and player.Character then
+            StartCharacterScript()
+        end
+    end)
+end)
+
+-- Selecting any other character cancels a pending True Genos startup and
+-- stops the active feature run. The custom button itself is explicitly skipped.
+local boundCharacterButtons = setmetatable({}, { __mode = "k" })
+
+local function bindOtherCharacterButton(instance)
+    if not instance:IsA("GuiButton")
+        or instance.Name ~= "ClickRegion"
+        or instance:IsDescendantOf(trueGenosUI)
+        or boundCharacterButtons[instance] then
+        return
+    end
+
+    boundCharacterButtons[instance] = true
+
+    connectController(instance.Activated, function()
+        CharacterSelectionGeneration += 1
+        StopCharacterScript()
+    end)
+end
+
+for _, descendant in ipairs(dropdownScroller:GetDescendants()) do
+    bindOtherCharacterButton(descendant)
+end
+
+connectController(dropdownScroller.DescendantAdded, bindOtherCharacterButton)
+
+-- Release menu/input listeners if this LocalScript is destroyed or replaced.
+connectController(script.Destroying, function()
+    CharacterSelectionGeneration += 1
+    StopCharacterScript()
+
+    for index = #controllerConnections, 1, -1 do
+        local connection = controllerConnections[index]
+        if connection and connection.Connected then
+            connection:Disconnect()
+        end
+    end
+
+    table.clear(controllerConnections)
+end)
+
+print("[SugaBlaz] Character selector ready. Select True Genos to start.")
