@@ -1122,8 +1122,6 @@ StopCharacterScript = function()
 end
 
 --// CUSTOM BUTTON HOVER / TOUCH DETECTION
--- MouseEnter/MouseLeave handles desktop pointer hover. Touch positions are
--- tracked globally so a finger can move onto or away from the button.
 local controllerConnections = {}
 
 local function connectController(signal, callback)
@@ -1192,7 +1190,7 @@ connectController(UserInputService.InputEnded, function(input)
 end)
 
 --// CHARACTER BUTTON INTEGRATION
-connectController(button.Activated, function()
+connectController(button.MouseButton1Click, function()
     CharacterSelectionGeneration += 1
     local selectionId = CharacterSelectionGeneration
     local previousCharacter = player.Character
