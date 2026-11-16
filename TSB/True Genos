@@ -18,7 +18,7 @@ local backpack = player:WaitForChild("Backpack")
 --// CHARACTER MENU
 local dropdownScroller = playerGui
     :WaitForChild("TopbarStandardClipped")
-    :WaitForChild("ClippedCointainer")
+    :WaitForChild("ClippedContainer")
     :WaitForChild("DropdownScroller")
 
 local cyborgTemplate = dropdownScroller:WaitForChild("Cyborg")
