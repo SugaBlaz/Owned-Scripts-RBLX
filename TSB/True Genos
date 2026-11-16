@@ -1250,7 +1250,7 @@ local function bindOtherCharacterButton(instance)
 
     boundCharacterButtons[instance] = true
 
-    connectController(instance.Activated, function()
+    connectController(instance.MouseButton1Click, function()
         CharacterSelectionGeneration += 1
         StopCharacterScript()
     end)
