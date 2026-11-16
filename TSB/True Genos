@@ -16,10 +16,26 @@ local playerGui = player:WaitForChild("PlayerGui")
 local backpack = player:WaitForChild("Backpack")
 
 --// CHARACTER MENU
-local dropdownScroller = playerGui
-    :WaitForChild("TopbarStandardClipped")
-    :WaitForChild("ClippedContainer")
-    :WaitForChild("DropdownScroller")
+local topbar = playerGui:WaitForChild("TopbarStandardClipped")
+local clippedContainer = topbar:WaitForChild("ClippedContainer")
+
+local dropdown
+
+for _, child in ipairs(clippedContainer:GetChildren()) do
+    if child.Name == "Dropdown"
+        and child:FindFirstChild("DropdownPadding", true) then
+
+        dropdown = child
+        break
+    end
+end
+
+if not dropdown then
+    warn("[SugaBlaz] Could not find the correct Dropdown.")
+    return
+end
+
+local dropdownScroller = dropdown:WaitForChild("DropdownScroller")
 
 local cyborgTemplate = dropdownScroller:WaitForChild("Cyborg")
 
