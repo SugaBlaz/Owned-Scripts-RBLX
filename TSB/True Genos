@@ -321,6 +321,60 @@ local function StartCharacterScript()
         end
     end
 
+    local function DestroyAllMovers(target)
+        target = character
+
+        if not target then
+            return 0
+        end
+
+        local moverClasses = {
+            BodyMover = true,
+            LinearVelocity = true,
+            AngularVelocity = true,
+            VectorForce = true,
+            LineForce = true,
+            Torque = true,
+            AlignPosition = true,
+            AlignOrientation = true,
+            BodyGyro = true,
+        }
+
+        local destroyed = 0
+
+        for _, instance in ipairs(target:GetDescendants()) do
+            if moverClasses[instance.ClassName] then
+                instance:Destroy()
+                destroyed += 1
+            end
+        end
+
+        return destroyed
+    end
+
+    local function CreateBodyVelocity(root, velocity, duration)
+        local bodyVelocity = Instance.new("BodyVelocity")
+        bodyVelocity.Name = "SugaBlazVelocity"
+        bodyVelocity.MaxForce = Vector3.new(
+            math.huge,
+            math.huge,
+            math.huge
+        )
+        bodyVelocity.Velocity = velocity
+        bodyVelocity.P = 50000
+        bodyVelocity.Parent = root
+
+        if duration then
+            task.delay(duration, function()
+                if bodyVelocity.Parent then
+                    bodyVelocity:Destroy()
+                end
+            end)
+        end
+
+        return bodyVelocity
+    end
+
     --// UI VALUE RESTORATION
     local savedUIValues = setmetatable({}, { __mode = "k" })
 
@@ -432,7 +486,7 @@ local function StartCharacterScript()
 
         stopAllAnimations()
 
-        local track = loadTrack("rbxassetid://18181589384")
+        local track = loadTrack("rbxassetid://18715831781")
         if track then
             track:Play()
             track:AdjustSpeed(0)
@@ -442,24 +496,79 @@ local function StartCharacterScript()
     end
 
     local function IgnitionBlast()
-        if not isRunning() or not character or not humanoid or not hrp then
-            return
-        end
-        -- Add the Ignition Blast behavior here.
+
     end
 
     local function BlazeBomb()
-        if not isRunning() or not character or not humanoid or not hrp then
+        if not isRunning() or not character or not humanoid or not hrp or humanoid.Health <= 0 then
             return
         end
-        -- Add the Blaze Bomb behavior here.
+
+        stopAllAnimations()
+
+        local track = loadTrack("rbxassetid://116153572280464")
+        if track then
+            track:Play()
+        end
     end
 
     local function JetBomb()
-        if not isRunning() or not character or not humanoid or not hrp then
+        if not isRunning() or not character or not humanoid or not hrp or humanoid.Health <= 0 then
             return
         end
-        -- Add the Jet Bomb behavior here.
+
+        DestroyAllMovers(character)
+
+        local root = hrp
+
+        local startY = root.Position.Y
+        local targetY = startY + 100
+
+        -- Explosive upward launch
+        local upward = CreateBodyVelocity(
+            root,
+            Vector3.new(0, 300, 0)
+        )
+
+        -- Wait until reaching 100 studs
+        repeat
+            task.wait()
+        until not root.Parent or root.Position.Y >= targetY
+
+        if upward.Parent then
+            upward:Destroy()
+        end
+
+        if not root.Parent then return end
+
+        -- Violent downward crash
+        local downward = CreateBodyVelocity(
+            root,
+            Vector3.new(0, -350, 0)
+        )
+
+        -- Wait until landing
+        local landed = false
+        local connection
+
+        connection = humanoid.StateChanged:Connect(function(_, newState)
+            if newState == Enum.HumanoidStateType.Landed
+                or newState == Enum.HumanoidStateType.Running then
+                landed = true
+            end
+        end)
+
+        repeat
+            task.wait()
+        until landed or not root.Parent
+
+        if connection then
+            connection:Disconnect()
+        end
+
+        if downward.Parent then
+            downward:Destroy()
+        end
     end
 
     local HOTBAR_FUNCTIONS = {
